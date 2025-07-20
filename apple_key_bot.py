@@ -79,46 +79,93 @@ class AppleKeyGenerator:
         import glob
         import stat
         
+        logger.info(f"Searching for chromedriver executable starting from: {base_path}")
+        
+        # If base_path is a file, get its directory
+        if os.path.isfile(base_path):
+            search_dir = os.path.dirname(base_path)
+        else:
+            search_dir = base_path
+        
+        logger.info(f"Searching in directory: {search_dir}")
+        
+        # List all files in the directory for debugging
+        try:
+            all_files = []
+            for root, dirs, files in os.walk(search_dir):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    all_files.append(full_path)
+            logger.info(f"Found files in directory: {all_files}")
+        except Exception as e:
+            logger.warning(f"Could not list directory contents: {e}")
+        
         # Common chromedriver executable names
         possible_names = ['chromedriver', 'chromedriver.exe']
         
-        # First, check if the base_path is already the correct executable
-        if os.path.isfile(base_path) and os.access(base_path, os.X_OK):
-            if not base_path.endswith(('THIRD_PARTY_NOTICES', '.txt', '.md')):
-                return base_path
-        
-        # If base_path is a directory or wrong file, search for the executable
-        search_dir = os.path.dirname(base_path) if os.path.isfile(base_path) else base_path
-        
         # Search recursively for chromedriver executable
         for root, dirs, files in os.walk(search_dir):
-            for name in possible_names:
-                candidate = os.path.join(root, name)
-                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                    # Verify it's not a text file
-                    try:
-                        with open(candidate, 'rb') as f:
-                            header = f.read(4)
-                            if header.startswith(b'\x7fELF') or header.startswith(b'MZ'):  # Linux/Windows executable
-                                logger.info(f"Found chromedriver executable: {candidate}")
-                                return candidate
-                    except:
+            for file in files:
+                # Check if filename matches chromedriver patterns
+                if file in possible_names or file.startswith('chromedriver'):
+                    candidate = os.path.join(root, file)
+                    logger.info(f"Checking candidate: {candidate}")
+                    
+                    # Skip obvious text files
+                    if any(candidate.endswith(suffix) for suffix in ['.txt', '.md', '.html', '.chromedriver']):
+                        logger.info(f"Skipping text file: {candidate}")
                         continue
+                    
+                    # Skip THIRD_PARTY_NOTICES files
+                    if 'THIRD_PARTY_NOTICES' in candidate:
+                        logger.info(f"Skipping THIRD_PARTY_NOTICES file: {candidate}")
+                        continue
+                    
+                    # Check if file exists and is executable
+                    if os.path.isfile(candidate):
+                        # Check file permissions
+                        try:
+                            st = os.stat(candidate)
+                            is_executable = bool(st.st_mode & stat.S_IEXEC)
+                            logger.info(f"File {candidate} - executable: {is_executable}, size: {st.st_size}")
+                            
+                            if st.st_size > 1000:  # ChromeDriver should be larger than 1KB
+                                # Try to read file header to verify it's a binary
+                                try:
+                                    with open(candidate, 'rb') as f:
+                                        header = f.read(4)
+                                        if header.startswith(b'\x7fELF') or header.startswith(b'MZ'):
+                                            logger.info(f"Found valid chromedriver executable: {candidate}")
+                                            # Make sure it's executable
+                                            os.chmod(candidate, st.st_mode | stat.S_IEXEC)
+                                            return candidate
+                                        else:
+                                            logger.info(f"File {candidate} is not a binary (header: {header})")
+                                except Exception as e:
+                                    logger.warning(f"Could not read file header for {candidate}: {e}")
+                        except Exception as e:
+                            logger.warning(f"Could not check file stats for {candidate}: {e}")
         
-        # Fallback: use glob to find chromedriver files
-        patterns = [
-            os.path.join(search_dir, '**/chromedriver'),
-            os.path.join(search_dir, '**/chromedriver.exe')
-        ]
+        # If we still haven't found it, try a more aggressive search
+        logger.warning("Standard search failed, trying aggressive search...")
         
-        for pattern in patterns:
-            matches = glob.glob(pattern, recursive=True)
-            for match in matches:
-                if os.access(match, os.X_OK) and not match.endswith(('THIRD_PARTY_NOTICES', '.txt', '.md')):
-                    logger.info(f"Found chromedriver via glob: {match}")
-                    return match
+        # Use find command if available (Linux/Unix)
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['find', search_dir, '-name', 'chromedriver', '-type', 'f', '-executable'],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                candidates = result.stdout.strip().split('\n')
+                for candidate in candidates:
+                    if 'THIRD_PARTY_NOTICES' not in candidate:
+                        logger.info(f"Found chromedriver via find command: {candidate}")
+                        return candidate
+        except Exception as e:
+            logger.warning(f"Find command failed: {e}")
         
-        raise FileNotFoundError(f"Could not find chromedriver executable in {search_dir}")
+        raise FileNotFoundError(f"Could not find chromedriver executable in {search_dir}. Available files: {all_files[:10]}")
 
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def setup_driver(self) -> webdriver.Chrome:
