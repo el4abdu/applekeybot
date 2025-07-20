@@ -74,6 +74,52 @@ class AppleKeyGenerator:
     def __init__(self):
         self.driver = None
         
+    def _find_chromedriver_executable(self, base_path: str) -> str:
+        """Find the correct chromedriver executable in the downloaded directory"""
+        import glob
+        import stat
+        
+        # Common chromedriver executable names
+        possible_names = ['chromedriver', 'chromedriver.exe']
+        
+        # First, check if the base_path is already the correct executable
+        if os.path.isfile(base_path) and os.access(base_path, os.X_OK):
+            if not base_path.endswith(('THIRD_PARTY_NOTICES', '.txt', '.md')):
+                return base_path
+        
+        # If base_path is a directory or wrong file, search for the executable
+        search_dir = os.path.dirname(base_path) if os.path.isfile(base_path) else base_path
+        
+        # Search recursively for chromedriver executable
+        for root, dirs, files in os.walk(search_dir):
+            for name in possible_names:
+                candidate = os.path.join(root, name)
+                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                    # Verify it's not a text file
+                    try:
+                        with open(candidate, 'rb') as f:
+                            header = f.read(4)
+                            if header.startswith(b'\x7fELF') or header.startswith(b'MZ'):  # Linux/Windows executable
+                                logger.info(f"Found chromedriver executable: {candidate}")
+                                return candidate
+                    except:
+                        continue
+        
+        # Fallback: use glob to find chromedriver files
+        patterns = [
+            os.path.join(search_dir, '**/chromedriver'),
+            os.path.join(search_dir, '**/chromedriver.exe')
+        ]
+        
+        for pattern in patterns:
+            matches = glob.glob(pattern, recursive=True)
+            for match in matches:
+                if os.access(match, os.X_OK) and not match.endswith(('THIRD_PARTY_NOTICES', '.txt', '.md')):
+                    logger.info(f"Found chromedriver via glob: {match}")
+                    return match
+        
+        raise FileNotFoundError(f"Could not find chromedriver executable in {search_dir}")
+
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def setup_driver(self) -> webdriver.Chrome:
         """Setup Chrome driver with private browsing and no cookies"""
@@ -82,8 +128,12 @@ class AppleKeyGenerator:
             
             # Auto-install ChromeDriver matching installed Chrome version
             # This automatically detects Chrome version and downloads matching driver
-            driver_path = ChromeDriverManager().install()
-            logger.info(f"ChromeDriver installed at: {driver_path}")
+            raw_driver_path = ChromeDriverManager().install()
+            logger.info(f"ChromeDriver downloaded to: {raw_driver_path}")
+            
+            # Find the correct executable (fixes Linux path issues)
+            driver_path = self._find_chromedriver_executable(raw_driver_path)
+            logger.info(f"Using ChromeDriver executable: {driver_path}")
             
             service = Service(driver_path)
             
