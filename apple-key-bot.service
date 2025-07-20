@@ -1,0 +1,25 @@
+[Unit]
+Description=Apple Key Generator Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/apple-key-bot
+Environment=PATH=/home/ubuntu/apple-key-bot/venv/bin
+ExecStart=/home/ubuntu/apple-key-bot/venv/bin/python apple_key_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=apple-key-bot
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/home/ubuntu/apple-key-bot
+
+[Install]
+WantedBy=multi-user.target

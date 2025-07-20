@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  apple-key-bot:
+    build: .
+    container_name: apple-key-bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - CHROME_HEADLESS=true
+      - CHROME_NO_SANDBOX=true
+      - CHROME_DISABLE_DEV_SHM_USAGE=true
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./logs:/app/logs
+      - /dev/shm:/dev/shm
+    shm_size: 2gb
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  logs:
