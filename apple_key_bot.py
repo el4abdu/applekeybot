@@ -73,6 +73,7 @@ class AppleKeyGenerator:
     
     def __init__(self):
         self.driver = None
+        self.user_data_dir = None
         
     def _find_chromedriver_executable(self, base_path: str) -> str:
         """Find the correct chromedriver executable in the downloaded directory"""
@@ -187,8 +188,16 @@ class AppleKeyGenerator:
             # Chrome options for private browsing and production
             chrome_options = Options()
             
+            # Create unique user data directory to avoid conflicts
+            import tempfile
+            import uuid
+            temp_dir = tempfile.gettempdir()
+            unique_id = str(uuid.uuid4())[:8]
+            user_data_dir = os.path.join(temp_dir, f"chrome_user_data_{unique_id}")
+            
             # Privacy and security options
             chrome_options.add_argument("--incognito")
+            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
             chrome_options.add_argument("--no-first-run")
             chrome_options.add_argument("--disable-default-apps")
             chrome_options.add_argument("--disable-extensions")
@@ -196,8 +205,22 @@ class AppleKeyGenerator:
             chrome_options.add_argument("--disable-web-security")
             chrome_options.add_argument("--disable-features=VizDisplayCompositor")
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument("--disable-background-networking")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-client-side-phishing-detection")
+            chrome_options.add_argument("--disable-default-apps")
+            chrome_options.add_argument("--disable-hang-monitor")
+            chrome_options.add_argument("--disable-popup-blocking")
+            chrome_options.add_argument("--disable-prompt-on-repost")
+            chrome_options.add_argument("--disable-sync")
+            chrome_options.add_argument("--disable-translate")
+            chrome_options.add_argument("--metrics-recording-only")
+            chrome_options.add_argument("--no-default-browser-check")
+            chrome_options.add_argument("--safebrowsing-disable-auto-update")
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            logger.info(f"Using unique user data directory: {user_data_dir}")
             
             # User agent to avoid detection
             chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -319,19 +342,198 @@ class AppleKeyGenerator:
             
         except Exception as e:
             result["error"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error for {service}: {e}")
         
-        return result
-    
-    def close_driver(self):
-        """Close the Chrome driver"""
-        if self.driver:
-            try:
+        # Find the correct executable (fixes Linux path issues)
+        driver_path = self._find_chromedriver_executable(raw_driver_path)
+        logger.info(f"Using ChromeDriver executable: {driver_path}")
+        
+        service = Service(driver_path)
+        
+        # Chrome options for private browsing and production
+        chrome_options = Options()
+        
+        # Create unique user data directory to avoid conflicts
+        import tempfile
+        import uuid
+        temp_dir = tempfile.gettempdir()
+        unique_id = str(uuid.uuid4())[:8]
+        user_data_dir = os.path.join(temp_dir, f"chrome_user_data_{unique_id}")
+        
+        # Privacy and security options
+        chrome_options.add_argument("--incognito")
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--disable-background-networking")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-client-side-phishing-detection")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-hang-monitor")
+        chrome_options.add_argument("--disable-popup-blocking")
+        chrome_options.add_argument("--disable-prompt-on-repost")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--disable-translate")
+        chrome_options.add_argument("--metrics-recording-only")
+        chrome_options.add_argument("--no-default-browser-check")
+        chrome_options.add_argument("--safebrowsing-disable-auto-update")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        logger.info(f"Using unique user data directory: {user_data_dir}")
+        
+        # User agent to avoid detection
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        
+        # Production/server options (enabled based on environment)
+        if os.getenv("CHROME_HEADLESS", "false").lower() == "true":
+            chrome_options.add_argument("--headless")
+            logger.info("Running Chrome in headless mode")
+        
+        if os.getenv("CHROME_NO_SANDBOX", "false").lower() == "true":
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            logger.info("Running Chrome with no-sandbox mode")
+        
+        # Additional stability options
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        
+        # Create driver instance
+        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        self.driver.set_window_size(1920, 1080)
+        
+        # Execute script to avoid detection
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+            # Store user data directory for cleanup
+            self.user_data_dir = user_data_dir
+            
+            logger.info(f"Chrome driver setup successful - Version: {self.driver.capabilities['browserVersion']}")
+            return self.driver
+            
+        except Exception as e:
+            logger.error(f"Failed to setup Chrome driver: {e}")
+            if self.driver:
                 self.driver.quit()
-                self.driver = None
-                logger.info("Chrome driver closed")
-            except Exception as e:
-                logger.error(f"Error closing driver: {e}")
+            raise
+    
+    def extract_key_from_url(self, url: str) -> Optional[str]:
+        """Extract redemption key from Apple service URL"""
+        try:
+            parsed_url = urlparse(url)
+            query_params = parse_qs(parsed_url.query)
+            
+            # Look for 'code' parameter in URL
+            if 'code' in query_params:
+                key = query_params['code'][0]
+                logger.info(f"Extracted key: {key}")
+                return key
+            
+            # Alternative: extract from URL path if code is in path
+            code_match = re.search(r'code=([A-Z0-9]+)', url)
+            if code_match:
+                key = code_match.group(1)
+                logger.info(f"Extracted key from path: {key}")
+                return key
+                
+            return None
+                
+        except Exception as e:
+            logger.error(f"Failed to extract key from URL {url}: {e}")
+            return None
+
+    async def generate_key(self, service: str) -> Dict[str, str]:
+        """Generate redemption key for specified Apple service"""
+        result = {
+            "success": False,
+            "key": None,
+            "service": service,
+            "error": None
+        }
+        
+        try:
+            if service not in SERVICE_BUTTONS:
+                result["error"] = f"Unknown service: {service}"
+                return result
+            
+            # Setup driver
+            if not self.driver:
+                self.setup_driver()
+        
+        logger.info(f"Generating key for {service.upper()} service")
+        
+        # Navigate to Apple redeem page
+        self.driver.get(APPLE_REDEEM_URL)
+        
+        # Wait for page to load
+        wait = WebDriverWait(self.driver, 15)
+        
+        # Find and click the service button
+        button_xpath = SERVICE_BUTTONS[service]
+        button = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
+        
+        logger.info(f"Clicking {service} button")
+        button.click()
+        
+        # Wait for redirect and capture the new URL
+        wait.until(lambda driver: driver.current_url != APPLE_REDEEM_URL)
+        
+        # Get the final URL after redirect
+        final_url = self.driver.current_url
+        logger.info(f"Redirected to: {final_url}")
+        
+        # Extract key from URL
+        key = self.extract_key_from_url(final_url)
+        
+        if key:
+            result["success"] = True
+            result["key"] = key
+            logger.info(f"Successfully generated {service} key: {key}")
+        else:
+            result["error"] = "Could not extract key from redirect URL"
+            
+    except TimeoutException:
+        result["error"] = "Timeout waiting for page elements"
+        logger.error(f"Timeout error for {service}")
+        
+    except WebDriverException as e:
+        result["error"] = f"WebDriver error: {str(e)}"
+        logger.error(f"WebDriver error for {service}: {e}")
+        
+    except Exception as e:
+        result["error"] = f"Unexpected error: {str(e)}"
+        logger.error(f"Unexpected error for {service}: {e}")
+    
+    return result
+
+def close_driver(self):
+    """Close the Chrome driver and cleanup temporary directories"""
+    if self.driver:
+        try:
+            self.driver.quit()
+            logger.info("Chrome driver closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing Chrome driver: {e}")
+        finally:
+            self.driver = None
+    
+    # Cleanup temporary user data directory
+    if self.user_data_dir and os.path.exists(self.user_data_dir):
+        try:
+            import shutil
+            shutil.rmtree(self.user_data_dir, ignore_errors=True)
+            logger.info(f"Cleaned up temporary directory: {self.user_data_dir}")
+        except Exception as e:
+            logger.warning(f"Could not cleanup temporary directory {self.user_data_dir}: {e}")
+        finally:
+            self.user_data_dir = None
 
 class AppleKeyBot:
     """Telegram bot for Apple key generation"""
