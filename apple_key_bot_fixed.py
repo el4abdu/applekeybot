@@ -142,11 +142,35 @@ class AppleKeyGenerator:
         
         raise FileNotFoundError(f"Could not find chromedriver executable in {search_dir}")
 
+    def _kill_existing_chrome_processes(self):
+        """Kill any existing Chrome processes to prevent conflicts"""
+        try:
+            import psutil
+            for proc in psutil.process_iter(['pid', 'name']):
+                if 'chrome' in proc.info['name'].lower():
+                    try:
+                        proc.kill()
+                        logger.info(f"Killed Chrome process: {proc.info['pid']}")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+        except ImportError:
+            # psutil not available, try system commands
+            try:
+                import subprocess
+                subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+                logger.info("Killed Chrome processes using pkill")
+            except Exception as e:
+                logger.warning(f"Could not kill Chrome processes: {e}")
+
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def setup_driver(self) -> webdriver.Chrome:
         """Setup Chrome driver with private browsing and no cookies"""
         try:
             logger.info("Setting up Chrome driver with auto-download...")
+            
+            # Kill any existing Chrome processes first (optional - can be disabled)
+            if os.getenv("KILL_CHROME_PROCESSES", "false").lower() == "true":
+                self._kill_existing_chrome_processes()
             
             # Auto-install ChromeDriver matching installed Chrome version
             raw_driver_path = ChromeDriverManager().install()
@@ -162,9 +186,17 @@ class AppleKeyGenerator:
             chrome_options = Options()
             
             # Create unique user data directory to avoid conflicts
+            import time
+            timestamp = int(time.time() * 1000)  # Use timestamp for uniqueness
+            pid = os.getpid()  # Add process ID for extra uniqueness
+            unique_id = f"{timestamp}_{pid}_{str(uuid.uuid4())[:8]}"
             temp_dir = tempfile.gettempdir()
-            unique_id = str(uuid.uuid4())[:8]
             user_data_dir = os.path.join(temp_dir, f"chrome_user_data_{unique_id}")
+            
+            # Ensure the directory doesn't exist
+            if os.path.exists(user_data_dir):
+                shutil.rmtree(user_data_dir, ignore_errors=True)
+                
             self.user_data_dir = user_data_dir
             
             # Privacy and security options
@@ -177,8 +209,15 @@ class AppleKeyGenerator:
             chrome_options.add_argument("--disable-web-security")
             chrome_options.add_argument("--disable-features=VizDisplayCompositor")
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument("--disable-background-networking")
+            chrome_options.add_argument("--disable-sync")
+            chrome_options.add_argument("--disable-translate")
+            chrome_options.add_argument("--disable-ipc-flooding-protection")
+            chrome_options.add_argument("--single-process")  # Force single process to avoid conflicts
+            chrome_options.add_argument("--no-zygote")  # Disable zygote process
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_experimental_option("detach", False)  # Ensure proper cleanup
             
             logger.info(f"Using unique user data directory: {user_data_dir}")
             
@@ -310,16 +349,33 @@ class AppleKeyGenerator:
         """Close the Chrome driver and cleanup temporary directories"""
         if self.driver:
             try:
+                # Close all windows first
+                for handle in self.driver.window_handles:
+                    self.driver.switch_to.window(handle)
+                    self.driver.close()
+                
+                # Quit the driver
                 self.driver.quit()
                 logger.info("Chrome driver closed successfully")
+                
+                # Wait a moment for cleanup
+                time.sleep(1)
+                
             except Exception as e:
                 logger.error(f"Error closing Chrome driver: {e}")
+                # Force kill if normal quit fails
+                try:
+                    self.driver.service.process.kill()
+                except:
+                    pass
             finally:
                 self.driver = None
         
         # Cleanup temporary user data directory
         if self.user_data_dir and os.path.exists(self.user_data_dir):
             try:
+                # Wait a moment before cleanup
+                time.sleep(2)
                 shutil.rmtree(self.user_data_dir, ignore_errors=True)
                 logger.info(f"Cleaned up temporary directory: {self.user_data_dir}")
             except Exception as e:
