@@ -193,16 +193,14 @@ class AppleKeyGenerator:
             temp_dir = tempfile.gettempdir()
             user_data_dir = os.path.join(temp_dir, f"chrome_user_data_{unique_id}")
             
-            # Ensure the directory doesn't exist
-            if os.path.exists(user_data_dir):
-                shutil.rmtree(user_data_dir, ignore_errors=True)
-                
-            self.user_data_dir = user_data_dir
+            # Store for cleanup but don't use it for Chrome
+            self.user_data_dir = user_data_dir  # Keep for potential cleanup
             
-            # Privacy and security options
+            # RADICAL SOLUTION: Completely bypass user data directory issues
+            # Remove user-data-dir entirely and use memory-only profile
             chrome_options.add_argument("--incognito")
-            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
             chrome_options.add_argument("--no-first-run")
+            chrome_options.add_argument("--no-default-browser-check")
             chrome_options.add_argument("--disable-default-apps")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-plugins")
@@ -213,11 +211,32 @@ class AppleKeyGenerator:
             chrome_options.add_argument("--disable-sync")
             chrome_options.add_argument("--disable-translate")
             chrome_options.add_argument("--disable-ipc-flooding-protection")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
+            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument("--disable-client-side-phishing-detection")
+            chrome_options.add_argument("--disable-crash-reporter")
+            chrome_options.add_argument("--disable-oopr-debug-crash-dump")
+            chrome_options.add_argument("--no-crash-upload")
+            chrome_options.add_argument("--disable-gpu-process-crash-limit")
             chrome_options.add_argument("--single-process")  # Force single process to avoid conflicts
             chrome_options.add_argument("--no-zygote")  # Disable zygote process
+            
+            # Memory-only profile - no disk storage
+            chrome_options.add_argument("--memory-pressure-off")
+            chrome_options.add_argument("--max_old_space_size=4096")
+            
+            # Disable all data persistence
+            chrome_options.add_argument("--disable-local-storage")
+            chrome_options.add_argument("--disable-databases")
+            chrome_options.add_argument("--disable-shared-workers")
+            
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             chrome_options.add_experimental_option("detach", False)  # Ensure proper cleanup
+            
+            # Don't use user-data-dir at all - let Chrome handle it in memory
+            logger.info("Using memory-only Chrome profile (no user-data-dir)")
             
             logger.info(f"Using unique user data directory: {user_data_dir}")
             
